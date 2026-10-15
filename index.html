@@ -67,6 +67,18 @@
   .cell { flex: 1; height: 22px; border-radius: 6px; border: 1.5px solid var(--line); padding: 2px; position: relative; }
   .cell::after { content: ""; position: absolute; right: -6px; top: 6px; width: 4px; height: 8px; border-radius: 0 2px 2px 0; background: var(--line); }
   .fill { height: 100%; border-radius: 3px; width: 0; background: var(--green); transition: width .5s, background .5s; }
+  .lines { display: grid; gap: 8px; margin-bottom: 12px; }
+  .lines input {
+    width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line);
+    background: #0d1013; color: var(--green); font: 600 22px/1 ui-monospace, "Cascadia Mono", Menlo, monospace;
+    letter-spacing: 6px; text-transform: uppercase; text-align: center; text-shadow: 0 0 8px #00e69a88;
+  }
+  .lines input:focus { outline: none; border-color: var(--green); }
+  .lines input:disabled { opacity: .4; }
+  .msgBtns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .msgBtns button { padding: 13px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--line); font-weight: 600; }
+  .msgBtns .primary { background: linear-gradient(135deg, #c2185b, var(--heart)); border: 0; color: #fff; }
+  .hint { color: var(--muted); font-size: 13px; margin: 10px 2px 0; min-height: 1.4em; }
   .note { color: var(--muted); font-size: 13px; margin: 2px 4px 0; }
   .warn { background: #2a1a0c; border-color: #6b4310; color: #ffc77a; }
   [hidden] { display: none !important; }
@@ -104,6 +116,20 @@
   </section>
 
   <section>
+    <h2>Birthday message</h2>
+    <div class="lines">
+      <input id="l0" maxlength="7" autocomplete="off" autocapitalize="characters" spellcheck="false" disabled>
+      <input id="l1" maxlength="7" autocomplete="off" autocapitalize="characters" spellcheck="false" disabled>
+      <input id="l2" maxlength="7" autocomplete="off" autocapitalize="characters" spellcheck="false" disabled>
+    </div>
+    <div class="msgBtns">
+      <button id="msgSave" disabled>Save</button>
+      <button id="msgPlay" class="primary" disabled>Save &amp; play</button>
+    </div>
+    <p class="hint" id="msgHint">Up to 3 lines of 7 letters. Á É Í Ó Ú and Ñ work.</p>
+  </section>
+
+  <section>
     <h2>Brightness</h2>
     <div class="row">
       <input type="range" id="bright" min="8" max="255" value="190" disabled>
@@ -129,6 +155,7 @@ const MODE    = '6f5a0002-3c2b-4d8e-9a71-1b2c3d4e5f60';
 const BRIGHT  = '6f5a0003-3c2b-4d8e-9a71-1b2c3d4e5f60';
 const BATTERY = '6f5a0004-3c2b-4d8e-9a71-1b2c3d4e5f60';
 const COMMAND = '6f5a0005-3c2b-4d8e-9a71-1b2c3d4e5f60';
+const MESSAGE = '6f5a0006-3c2b-4d8e-9a71-1b2c3d4e5f60';
 
 const $ = id => document.getElementById(id);
 let device = null, ch = {};
@@ -140,9 +167,9 @@ const write = (c, byte) => gatt(() => ch[c].writeValue(new Uint8Array([byte])));
 
 function setConnected(on) {
   $('status').classList.toggle('on', on);
-  $('statusText').textContent = on ? 'Connected' : 'Not connected';
+  $('statusText').textContent = on ? device.name : 'Not connected';
   $('connect').textContent = on ? 'Disconnect' : 'Connect';
-  document.querySelectorAll('.mode, #bdayGo, #bdayStop, #bright').forEach(e => e.disabled = !on);
+  document.querySelectorAll('.mode, #bdayGo, #bdayStop, #bright, .lines input, #msgSave, #msgPlay').forEach(e => e.disabled = !on);
 }
 
 function showMode(m) {
@@ -176,12 +203,14 @@ async function connect() {
   device.addEventListener('gattserverdisconnected', () => setConnected(false));
   const server = await device.gatt.connect();
   const svc = await server.getPrimaryService(SVC);
-  for (const [k, u] of Object.entries({ MODE, BRIGHT, BATTERY, COMMAND })) ch[k] = await svc.getCharacteristic(u);
+  for (const [k, u] of Object.entries({ MODE, BRIGHT, BATTERY, COMMAND, MESSAGE })) ch[k] = await svc.getCharacteristic(u);
 
   showMode((await ch.MODE.readValue()).getUint8(0));
   const b = (await ch.BRIGHT.readValue()).getUint8(0);
   $('bright').value = b; $('brightVal').textContent = Math.round(b / 2.55) + '%';
   showBattery((await ch.BATTERY.readValue()).getUint16(0, true));
+  const msg = new TextDecoder().decode(await ch.MESSAGE.readValue()).split('\n');
+  for (let i = 0; i < 3; i++) $('l' + i).value = msg[i] || '';
 
   ch.MODE.addEventListener('characteristicvaluechanged', e => showMode(e.target.value.getUint8(0)));
   ch.BATTERY.addEventListener('characteristicvaluechanged', e => showBattery(e.target.value.getUint16(0, true)));
@@ -203,6 +232,20 @@ document.querySelectorAll('.mode').forEach(b => b.onclick = () => {
 });
 $('bdayGo').onclick = () => write('COMMAND', 1);
 $('bdayStop').onclick = () => write('COMMAND', 2);
+
+// Message: keep only what the pendant's 5x7 font can show (plus Á É Í Ó Ú Ñ).
+document.querySelectorAll('.lines input').forEach(inp => inp.oninput = () => {
+  inp.value = inp.value.normalize('NFC').toUpperCase().replace(/[^\x20-\x7EÁÉÍÓÚÑ]/g, '').slice(0, 7);
+});
+async function saveMessage() {
+  const lines = [0, 1, 2].map(i => $('l' + i).value.trimEnd());
+  while (lines.length > 1 && !lines[lines.length - 1]) lines.pop();
+  await gatt(() => ch.MESSAGE.writeValue(new TextEncoder().encode(lines.join('\n'))));
+  $('msgHint').textContent = 'Saved on the pendant.';
+  setTimeout(() => $('msgHint').textContent = 'Up to 3 lines of 7 letters. Á É Í Ó Ú and Ñ work.', 2500);
+}
+$('msgSave').onclick = () => saveMessage().catch(e => $('msgHint').textContent = 'Failed: ' + e.message);
+$('msgPlay').onclick = () => saveMessage().then(() => write('COMMAND', 1)).catch(e => $('msgHint').textContent = 'Failed: ' + e.message);
 
 // While the slider moves, send at most one value at a time and always the latest one.
 let pending = null, sending = false;
