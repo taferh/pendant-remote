@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0d10">
+<title>Pendant Remote</title>
+<style>
+  :root {
+    --bg: #0b0d10; --panel: #15181d; --panel-2: #1c2026; --line: #2a2f37;
+    --text: #e9edf2; --muted: #8b94a1;
+    --red: #ff3a2a; --amber: #ffa000; --green: #00e69a; --heart: #ff2a5c;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
+    font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    padding: max(16px, env(safe-area-inset-top)) 16px 32px;
+  }
+  main { max-width: 440px; margin: 0 auto; display: grid; gap: 14px; }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 4px 2px 6px; }
+  h1 { font-size: 20px; margin: 0; letter-spacing: .2px; }
+  .status { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 14px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: #555; transition: background .3s, box-shadow .3s; }
+  .on .dot { background: var(--green); box-shadow: 0 0 10px var(--green); }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 16px; }
+  h2 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin: 0 0 12px; }
+  button { font: inherit; color: inherit; border: 0; cursor: pointer; }
+  button:disabled { opacity: .4; cursor: default; }
+  .connect {
+    width: 100%; padding: 16px; border-radius: 14px; font-weight: 600; font-size: 17px;
+    background: linear-gradient(135deg, #1f8f66, #00b07a); color: #04130d;
+  }
+  .modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .mode {
+    background: var(--panel-2); border: 1.5px solid var(--line); border-radius: 14px;
+    padding: 14px 6px 10px; display: grid; justify-items: center; gap: 8px; font-size: 14px;
+    transition: border-color .2s, transform .1s;
+  }
+  .mode:active { transform: scale(.97); }
+  .mode[aria-pressed="true"] { border-color: var(--green); box-shadow: 0 0 0 3px #00e69a22; }
+  .icon { width: 46px; height: 46px; display: grid; place-items: center; }
+  .lens { width: 42px; height: 42px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #b8ffe3 0 8%, var(--green) 30%, #006b48 100%);
+    box-shadow: 0 0 14px #00e69a66; }
+  .head { width: 20px; height: 46px; border-radius: 6px; background: #e3aa18; display: grid; gap: 3px; padding: 3px; }
+  .head i { display: block; border-radius: 50%; background: #222; }
+  .head i:nth-child(1) { background: var(--red); box-shadow: 0 0 6px var(--red); }
+  .party { width: 42px; height: 42px; border-radius: 50%;
+    background: conic-gradient(red, orange, yellow, lime, cyan, blue, magenta, red); filter: saturate(1.2); }
+  .bday { display: grid; grid-template-columns: 1fr auto; gap: 10px; }
+  .go {
+    padding: 16px; border-radius: 14px; font-weight: 600; font-size: 17px;
+    background: linear-gradient(135deg, #c2185b, var(--heart)); color: #fff;
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+  }
+  .stop { padding: 16px 18px; border-radius: 14px; background: var(--panel-2); border: 1px solid var(--line); }
+  .heart { width: 18px; height: 18px; position: relative; transform: rotate(-45deg); background: #fff; margin-top: 4px; }
+  .heart::before, .heart::after { content: ""; position: absolute; width: 18px; height: 18px; border-radius: 50%; background: #fff; }
+  .heart::before { top: -9px; left: 0; } .heart::after { left: 9px; top: 0; }
+  .go:not(:disabled) .heart { animation: beat 0.9s infinite; }
+  @keyframes beat { 0%, 100% { scale: 1; } 10% { scale: 1.25; } 25% { scale: 1.05; } 35% { scale: 1.18; } }
+  .row { display: flex; align-items: center; gap: 12px; }
+  input[type=range] { flex: 1; accent-color: var(--green); height: 32px; }
+  .val { min-width: 3.2em; text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+  .bat { display: flex; align-items: center; gap: 14px; }
+  .cell { flex: 1; height: 22px; border-radius: 6px; border: 1.5px solid var(--line); padding: 2px; position: relative; }
+  .cell::after { content: ""; position: absolute; right: -6px; top: 6px; width: 4px; height: 8px; border-radius: 0 2px 2px 0; background: var(--line); }
+  .fill { height: 100%; border-radius: 3px; width: 0; background: var(--green); transition: width .5s, background .5s; }
+  .note { color: var(--muted); font-size: 13px; margin: 2px 4px 0; }
+  .warn { background: #2a1a0c; border-color: #6b4310; color: #ffc77a; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Pendant</h1>
+    <div class="status" id="status"><span class="dot"></span><span id="statusText">Not connected</span></div>
+  </header>
+
+  <section class="warn" id="unsupported" hidden>
+    This browser cannot use Bluetooth. Open this page in Chrome on Android, from an
+    https:// address (or localhost).
+  </section>
+
+  <button class="connect" id="connect">Connect</button>
+
+  <section>
+    <h2>Mode</h2>
+    <div class="modes">
+      <button class="mode" data-mode="0" aria-pressed="false" disabled><span class="icon"><span class="lens"></span></span>Lens</button>
+      <button class="mode" data-mode="1" aria-pressed="false" disabled><span class="icon"><span class="head"><i></i><i></i><i></i></span></span>Head</button>
+      <button class="mode" data-mode="2" aria-pressed="false" disabled><span class="icon"><span class="party"></span></span>Party</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Birthday</h2>
+    <div class="bday">
+      <button class="go" id="bdayGo" disabled><span class="heart"></span>Play birthday</button>
+      <button class="stop" id="bdayStop" disabled>Stop</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Brightness</h2>
+    <div class="row">
+      <input type="range" id="bright" min="8" max="255" value="190" disabled>
+      <span class="val" id="brightVal">–</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>Battery</h2>
+    <div class="bat">
+      <div class="cell"><div class="fill" id="batFill"></div></div>
+      <span class="val" id="batVal">–</span>
+    </div>
+  </section>
+
+  <p class="note">The pendant must be awake to connect. If it is asleep, press its BOOT button.</p>
+</main>
+
+<script>
+// Must match phone_link.ino
+const SVC     = '6f5a0001-3c2b-4d8e-9a71-1b2c3d4e5f60';
+const MODE    = '6f5a0002-3c2b-4d8e-9a71-1b2c3d4e5f60';
+const BRIGHT  = '6f5a0003-3c2b-4d8e-9a71-1b2c3d4e5f60';
+const BATTERY = '6f5a0004-3c2b-4d8e-9a71-1b2c3d4e5f60';
+const COMMAND = '6f5a0005-3c2b-4d8e-9a71-1b2c3d4e5f60';
+
+const $ = id => document.getElementById(id);
+let device = null, ch = {};
+
+// Bluetooth allows one operation at a time: queue every read and write.
+let queue = Promise.resolve();
+const gatt = fn => (queue = queue.then(fn, fn));
+const write = (c, byte) => gatt(() => ch[c].writeValue(new Uint8Array([byte])));
+
+function setConnected(on) {
+  $('status').classList.toggle('on', on);
+  $('statusText').textContent = on ? 'Connected' : 'Not connected';
+  $('connect').textContent = on ? 'Disconnect' : 'Connect';
+  document.querySelectorAll('.mode, #bdayGo, #bdayStop, #bright').forEach(e => e.disabled = !on);
+}
+
+function showMode(m) {
+  document.querySelectorAll('.mode').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.mode === m)));
+}
+
+// Rough LiPo charge from resting voltage.
+function batteryPercent(mv) {
+  const pts = [[3300, 0], [3600, 10], [3700, 30], [3800, 55], [3900, 70], [4000, 82], [4100, 92], [4200, 100]];
+  if (mv <= pts[0][0]) return 0;
+  for (let i = 1; i < pts.length; i++) {
+    const [v1, p1] = pts[i], [v0, p0] = pts[i - 1];
+    if (mv <= v1) return Math.round(p0 + (p1 - p0) * (mv - v0) / (v1 - v0));
+  }
+  return 100;
+}
+function showBattery(mv) {
+  if (!mv) { $('batVal').textContent = 'USB'; $('batFill').style.width = '0'; return; }
+  const p = batteryPercent(mv);
+  $('batVal').textContent = p + '%';
+  $('batFill').style.width = p + '%';
+  $('batFill').style.background = p < 15 ? 'var(--red)' : p < 35 ? 'var(--amber)' : 'var(--green)';
+  $('batVal').title = (mv / 1000).toFixed(2) + ' V';
+}
+
+async function connect() {
+  device = await navigator.bluetooth.requestDevice({
+    filters: [{ namePrefix: 'Pendant' }, { services: [SVC] }],
+    optionalServices: [SVC],
+  });
+  device.addEventListener('gattserverdisconnected', () => setConnected(false));
+  const server = await device.gatt.connect();
+  const svc = await server.getPrimaryService(SVC);
+  for (const [k, u] of Object.entries({ MODE, BRIGHT, BATTERY, COMMAND })) ch[k] = await svc.getCharacteristic(u);
+
+  showMode((await ch.MODE.readValue()).getUint8(0));
+  const b = (await ch.BRIGHT.readValue()).getUint8(0);
+  $('bright').value = b; $('brightVal').textContent = Math.round(b / 2.55) + '%';
+  showBattery((await ch.BATTERY.readValue()).getUint16(0, true));
+
+  ch.MODE.addEventListener('characteristicvaluechanged', e => showMode(e.target.value.getUint8(0)));
+  ch.BATTERY.addEventListener('characteristicvaluechanged', e => showBattery(e.target.value.getUint16(0, true)));
+  await ch.MODE.startNotifications();
+  await ch.BATTERY.startNotifications();
+  setConnected(true);
+}
+
+$('connect').onclick = async () => {
+  if (device?.gatt.connected) { device.gatt.disconnect(); return; }
+  try { await connect(); }
+  catch (e) { if (e.name !== 'NotFoundError') $('statusText').textContent = 'Failed: ' + e.message; }
+};
+
+document.querySelectorAll('.mode').forEach(b => b.onclick = () => {
+  const m = +b.dataset.mode;
+  showMode(m);
+  write('MODE', m);
+});
+$('bdayGo').onclick = () => write('COMMAND', 1);
+$('bdayStop').onclick = () => write('COMMAND', 2);
+
+// While the slider moves, send at most one value at a time and always the latest one.
+let pending = null, sending = false;
+$('bright').oninput = e => {
+  const v = +e.target.value;
+  $('brightVal').textContent = Math.round(v / 2.55) + '%';
+  pending = v;
+  if (sending) return;
+  sending = true;
+  (async function flush() {
+    while (pending !== null) { const x = pending; pending = null; await write('BRIGHT', x).catch(() => {}); }
+    sending = false;
+  })();
+};
+
+if (!navigator.bluetooth) { $('unsupported').hidden = false; $('connect').disabled = true; }
+setConnected(false);
+</script>
+</body>
+</html>
