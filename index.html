@@ -75,6 +75,9 @@
   }
   .lines input:focus { outline: none; border-color: var(--green); }
   .lines input:disabled { opacity: .4; }
+  .emojis { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+  .emojis button { width: 40px; height: 40px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); font-size: 20px; line-height: 1; }
+  .emojis button:active { transform: scale(.92); }
   .msgBtns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .msgBtns button { padding: 13px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--line); font-weight: 600; }
   .msgBtns .primary { background: linear-gradient(135deg, #c2185b, var(--heart)); border: 0; color: #fff; }
@@ -120,15 +123,16 @@
   <section>
     <h2>Birthday message</h2>
     <div class="lines">
-      <input id="l0" maxlength="7" autocomplete="off" autocapitalize="characters" spellcheck="false" disabled>
-      <input id="l1" maxlength="7" autocomplete="off" autocapitalize="characters" spellcheck="false" disabled>
-      <input id="l2" maxlength="7" autocomplete="off" autocapitalize="characters" spellcheck="false" disabled>
+      <input id="l0" autocomplete="off" autocapitalize="characters" spellcheck="false" disabled>
+      <input id="l1" autocomplete="off" autocapitalize="characters" spellcheck="false" disabled>
+      <input id="l2" autocomplete="off" autocapitalize="characters" spellcheck="false" disabled>
     </div>
+    <div class="emojis" id="emojis"></div>
     <div class="msgBtns">
       <button id="msgSave" disabled>Save</button>
       <button id="msgPlay" class="primary" disabled>Save &amp; play</button>
     </div>
-    <p class="hint" id="msgHint">Up to 3 lines of 7 letters. Á É Í Ó Ú and Ñ work.</p>
+    <p class="hint" id="msgHint">Up to 3 lines of 7 letters. Á É Í Ó Ú, Ñ and the emoji above work.</p>
   </section>
 
   <section>
@@ -177,7 +181,7 @@ function setConnected(on) {
   $('status').classList.toggle('on', on);
   $('statusText').textContent = on ? device.name : 'Not connected';
   $('connect').textContent = on ? 'Disconnect' : 'Connect';
-  document.querySelectorAll('.mode, #bdayGo, #bdayStop, #bright, .lines input, #msgSave, #msgPlay, #update').forEach(e => e.disabled = !on);
+  document.querySelectorAll('.mode, #bdayGo, #bdayStop, #bright, .lines input, #msgSave, #msgPlay, #update, .emojis button').forEach(e => e.disabled = !on);
 }
 
 function showMode(m) {
@@ -241,16 +245,44 @@ document.querySelectorAll('.mode').forEach(b => b.onclick = () => {
 $('bdayGo').onclick = () => write('COMMAND', 1);
 $('bdayStop').onclick = () => write('COMMAND', 2);
 
-// Message: keep only what the pendant's 5x7 font can show (plus Á É Í Ó Ú Ñ).
-document.querySelectorAll('.lines input').forEach(inp => inp.oninput = () => {
-  inp.value = inp.value.normalize('NFC').toUpperCase().replace(/[^\x20-\x7EÁÉÍÓÚÑ]/g, '').slice(0, 7);
+// Message: keep only what the pendant can show, counted in visible characters (an emoji
+// is one character but several UTF-16 units). Must match emojiFor() in the firmware.
+const EMOJI = ['❤','♥','❣','💓','💘','💕','💖','💗','💝','💞','🧡','💛','💚','💙','💜','🤍',
+  '☺','😀','😁','😂','😃','😄','😅','😆','😇','😈','😉','😊','😋','😌','😍','🙂','🥰',
+  '♪','♫','🎵','🎶','☀','🌞','⭐','★','🌟','🎂','🍰','🧁','🎈','🎉','🎊','🚦','🚥','✨'];
+const PICKER = ['❤','🧡','💛','💚','💙','💜','💖','😊','⭐','✨','🎂','🎈','🎉','🎵','☀','🚦'];
+const seg = new Intl.Segmenter();
+function cleanLine(text) {
+  const out = [];
+  for (const { segment } of seg.segment(text.normalize('NFC'))) {
+    const ch = segment.replace(/[️\u{1F3FB}-\u{1F3FF}]/gu, '').toUpperCase();
+    if (/^[\x20-\x7EÁÉÍÓÚÑÜ]$/.test(ch) || EMOJI.includes(ch)) out.push(ch);
+    if (out.length === 7) break;
+  }
+  return out.join('');
+}
+let lastLine = $('l0');
+document.querySelectorAll('.lines input').forEach(inp => {
+  inp.onfocus = () => lastLine = inp;
+  inp.oninput = () => { const v = cleanLine(inp.value); if (v !== inp.value) inp.value = v; };
 });
+for (const e of PICKER) {
+  const b = document.createElement('button');
+  b.textContent = e; b.disabled = true;
+  b.onpointerdown = ev => ev.preventDefault();          // keep the keyboard and cursor where they are
+  b.onclick = () => {
+    const inp = lastLine, at = inp.selectionStart ?? inp.value.length;
+    inp.value = cleanLine(inp.value.slice(0, at) + e + inp.value.slice(at));
+    inp.focus();
+  };
+  $('emojis').appendChild(b);
+}
 async function saveMessage() {
   const lines = [0, 1, 2].map(i => $('l' + i).value.trimEnd());
   while (lines.length > 1 && !lines[lines.length - 1]) lines.pop();
   await gatt(() => ch.MESSAGE.writeValue(new TextEncoder().encode(lines.join('\n'))));
   $('msgHint').textContent = 'Saved on the pendant.';
-  setTimeout(() => $('msgHint').textContent = 'Up to 3 lines of 7 letters. Á É Í Ó Ú and Ñ work.', 2500);
+  setTimeout(() => $('msgHint').textContent = 'Up to 3 lines of 7 letters. Á É Í Ó Ú, Ñ and the emoji above work.', 2500);
 }
 $('msgSave').onclick = () => saveMessage().catch(e => $('msgHint').textContent = 'Failed: ' + e.message);
 $('msgPlay').onclick = () => saveMessage().then(() => write('COMMAND', 1)).catch(e => $('msgHint').textContent = 'Failed: ' + e.message);
