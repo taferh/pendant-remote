@@ -79,6 +79,8 @@
   .msgBtns button { padding: 13px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--line); font-weight: 600; }
   .msgBtns .primary { background: linear-gradient(135deg, #c2185b, var(--heart)); border: 0; color: #fff; }
   .hint { color: var(--muted); font-size: 13px; margin: 10px 2px 0; min-height: 1.4em; }
+  .update { width: 100%; padding: 13px; border-radius: 12px; background: transparent; border: 1px dashed var(--line); color: var(--muted); }
+  .update.armed { border: 1px solid var(--amber); color: var(--amber); }
   .note { color: var(--muted); font-size: 13px; margin: 2px 4px 0; }
   .warn { background: #2a1a0c; border-color: #6b4310; color: #ffc77a; }
   [hidden] { display: none !important; }
@@ -145,6 +147,12 @@
     </div>
   </section>
 
+  <section>
+    <h2>Firmware</h2>
+    <button class="update" id="update" disabled>Update firmware (all pendants)</button>
+    <p class="hint">Puts every pendant on your home Wi-Fi for 5 minutes, to receive new firmware from the computer. BOOT cancels.</p>
+  </section>
+
   <p class="note">The pendant must be awake to connect. If it is asleep, press its BOOT button.</p>
 </main>
 
@@ -169,7 +177,7 @@ function setConnected(on) {
   $('status').classList.toggle('on', on);
   $('statusText').textContent = on ? device.name : 'Not connected';
   $('connect').textContent = on ? 'Disconnect' : 'Connect';
-  document.querySelectorAll('.mode, #bdayGo, #bdayStop, #bright, .lines input, #msgSave, #msgPlay').forEach(e => e.disabled = !on);
+  document.querySelectorAll('.mode, #bdayGo, #bdayStop, #bright, .lines input, #msgSave, #msgPlay, #update').forEach(e => e.disabled = !on);
 }
 
 function showMode(m) {
@@ -246,6 +254,20 @@ async function saveMessage() {
 }
 $('msgSave').onclick = () => saveMessage().catch(e => $('msgHint').textContent = 'Failed: ' + e.message);
 $('msgPlay').onclick = () => saveMessage().then(() => write('COMMAND', 1)).catch(e => $('msgHint').textContent = 'Failed: ' + e.message);
+
+// Update mode: first tap arms the button, a second tap within 4 s sends the command.
+let armTimer = null;
+$('update').onclick = () => {
+  const b = $('update');
+  if (!b.classList.contains('armed')) {
+    b.classList.add('armed'); b.textContent = 'Tap again to start update mode';
+    armTimer = setTimeout(() => { b.classList.remove('armed'); b.textContent = 'Update firmware (all pendants)'; }, 4000);
+    return;
+  }
+  clearTimeout(armTimer);
+  b.classList.remove('armed'); b.textContent = 'Update mode started';
+  write('COMMAND', 3);
+};
 
 // While the slider moves, send at most one value at a time and always the latest one.
 let pending = null, sending = false;
