@@ -177,6 +177,7 @@
     <p class="hint">Puts every pendant on your home Wi-Fi for 5 minutes, to receive new firmware from the computer. BOOT cancels.</p>
   </section>
 
+  <p class="note">Sounds: <a href="https://elevenlabs.io/sound-effects/slot-machine" style="color: inherit">elevenlabs.io</a>.</p>
   <p class="note">The pendant must be awake to connect. If it is asleep, press its BOOT button.</p>
 </main>
 
@@ -348,9 +349,27 @@ $('wordsSave').onclick = async () => {
 // the drums (rlReelPos in roulette_logic.h): one click per face rolling past.
 let ac = null;
 function audio() {
-  if (!ac) ac = new (window.AudioContext || window.webkitAudioContext)();
+  if (!ac) { ac = new (window.AudioContext || window.webkitAudioContext)(); loadSounds(); }
   if (ac.state !== 'running') ac.resume();
   return ac;
+}
+// Recorded sounds (sounds/*.mp3, from elevenlabs.io). Until they have loaded, or if they
+// cannot load, the made-up sounds below play instead.
+const sfx = {};
+async function loadSounds() {
+  for (const name of ['spin', 'stop', 'win', 'jackpot', 'coins']) {
+    try {
+      const r = await fetch('sounds/' + name + '.mp3');
+      sfx[name] = await ac.decodeAudioData(await r.arrayBuffer());
+    } catch (e) { console.warn('sound', name, e); }
+  }
+}
+function sample(name, at, gain = 1, rate = 1) {
+  const src = ac.createBufferSource(), g = ac.createGain();
+  src.buffer = sfx[name]; src.playbackRate.value = rate; g.gain.value = gain;
+  src.connect(g).connect(ac.destination);
+  src.start(at);
+  return { src, g };
 }
 function reelPos(t, stop, dist) {
   if (t >= stop) return dist;
@@ -381,6 +400,7 @@ function tone(at, freq, len, gain, type = 'triangle', endFreq = freq) {
 }
 function playTurn(untilMs, stops, jackpot) {
   const a = audio(), t0 = a.currentTime + untilMs / 1000;
+  if (sfx.spin && sfx.stop && sfx.win && sfx.jackpot && sfx.coins) return playTurnRecorded(t0, stops, jackpot);
   for (const stop of stops) {
     const dist = 6 + Math.floor(stop / 150) + 2;
     let last = 0;
@@ -400,6 +420,26 @@ function playTurn(untilMs, stops, jackpot) {
   } else {
     [523, 659, 784].forEach((f, i) => tone(end + i * 0.11, f, 0.18, 0.3));
   }
+}
+// The rattle loops while any drum turns, a little quieter and slower after each stop; each
+// drum clunks when it stops; then the win sound, or the jackpot music with falling coins.
+function playTurnRecorded(t0, stops, jackpot) {
+  const sorted = [...stops].sort((x, y) => x - y), last = t0 + sorted[sorted.length - 1] / 1000;
+  const spin = sample('spin', t0, 0.0001);
+  spin.src.loop = true; spin.src.loopStart = 0.05; spin.src.loopEnd = sfx.spin.duration - 0.05;   // skip the mp3 padding
+  spin.g.gain.setValueAtTime(0.0001, t0);
+  spin.g.gain.exponentialRampToValueAtTime(0.9, t0 + 0.15);
+  sorted.forEach((ms, i) => {
+    const at = t0 + ms / 1000, left = sorted.length - 1 - i;
+    sample('stop', at, 1.0);
+    if (left > 0) spin.g.gain.setTargetAtTime(0.9 * (0.4 + 0.6 * left / sorted.length), at, 0.05);
+  });
+  spin.src.playbackRate.setValueAtTime(1, t0 + 0.5 * (last - t0));
+  spin.src.playbackRate.linearRampToValueAtTime(0.7, last);
+  spin.g.gain.setTargetAtTime(0.0001, last - 0.02, 0.03);
+  spin.src.stop(last + 0.3);
+  if (jackpot) { sample('jackpot', last + 0.2, 0.9); sample('coins', last + 0.5, 0.8); }
+  else sample('win', last + 0.15, 0.8);
 }
 function onTurn(v) {
   const until = v.getUint16(0, true), n = v.getUint8(2), stops = [];
