@@ -31,7 +31,7 @@
     width: 100%; padding: 16px; border-radius: 14px; font-weight: 600; font-size: 17px;
     background: linear-gradient(135deg, #1f8f66, #00b07a); color: #04130d;
   }
-  .modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .modes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
   .mode {
     background: var(--panel-2); border: 1.5px solid var(--line); border-radius: 14px;
     padding: 14px 6px 10px; display: grid; justify-items: center; gap: 8px; font-size: 14px;
@@ -48,6 +48,15 @@
   .head i:nth-child(1) { background: var(--red); box-shadow: 0 0 6px var(--red); }
   .party { width: 42px; height: 42px; border-radius: 50%;
     background: conic-gradient(red, orange, yellow, lime, cyan, blue, magenta, red); filter: saturate(1.2); }
+  .slot { width: 40px; height: 40px; border-radius: 9px; background: #2b1d05; border: 2px solid #e3aa18;
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; padding: 4px; }
+  .slot i { border-radius: 3px; background: linear-gradient(#0000 0 15%, #ffd23c 15% 85%, #0000 85%); }
+  .words {
+    width: 100%; min-height: 9.5em; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); resize: vertical;
+    background: #0d1013; color: #ffd23c; font: 600 18px/1.45 ui-monospace, "Cascadia Mono", Menlo, monospace;
+    letter-spacing: 2px; text-transform: uppercase; margin-bottom: 12px;
+  }
+  .words:focus { outline: none; border-color: #ffd23c; }
   .bday { display: grid; grid-template-columns: 1fr auto; gap: 10px; }
   .go {
     padding: 16px; border-radius: 14px; font-weight: 600; font-size: 17px;
@@ -109,6 +118,7 @@
       <button class="mode" data-mode="0" aria-pressed="false" disabled><span class="icon"><span class="lens"></span></span>Lens</button>
       <button class="mode" data-mode="1" aria-pressed="false" disabled><span class="icon"><span class="head"><i></i><i></i><i></i></span></span>Head</button>
       <button class="mode" data-mode="2" aria-pressed="false" disabled><span class="icon"><span class="party"></span></span>Party</button>
+      <button class="mode" data-mode="3" aria-pressed="false" disabled><span class="icon"><span class="slot"><i></i><i></i><i></i></span></span>Ruleta</button>
     </div>
   </section>
 
@@ -133,6 +143,16 @@
       <button id="msgPlay" class="primary" disabled>Save &amp; play</button>
     </div>
     <p class="hint" id="msgHint">Up to 3 lines of 7 letters. Á É Í Ó Ú, Ñ and the emoji above work.</p>
+  </section>
+
+  <section>
+    <h2>Roulette words</h2>
+    <textarea class="words" id="words" rows="6" autocomplete="off" autocapitalize="characters" spellcheck="false" disabled></textarea>
+    <div class="msgBtns">
+      <button id="wordsSave" class="primary" disabled>Save words</button>
+      <button id="soundTest">Test sound</button>
+    </div>
+    <p class="hint" id="wordsHint">One word per line, up to 12 words of 10 letters. While connected, this phone plays the slot-machine sounds.</p>
   </section>
 
   <section>
@@ -168,6 +188,8 @@ const BRIGHT  = '6f5a0003-3c2b-4d8e-9a71-1b2c3d4e5f60';
 const BATTERY = '6f5a0004-3c2b-4d8e-9a71-1b2c3d4e5f60';
 const COMMAND = '6f5a0005-3c2b-4d8e-9a71-1b2c3d4e5f60';
 const MESSAGE = '6f5a0006-3c2b-4d8e-9a71-1b2c3d4e5f60';
+const WORDS   = '6f5a0007-3c2b-4d8e-9a71-1b2c3d4e5f60';
+const TURN    = '6f5a0008-3c2b-4d8e-9a71-1b2c3d4e5f60';
 
 const $ = id => document.getElementById(id);
 let device = null, ch = {};
@@ -181,7 +203,8 @@ function setConnected(on) {
   $('status').classList.toggle('on', on);
   $('statusText').textContent = on ? device.name : 'Not connected';
   $('connect').textContent = on ? 'Disconnect' : 'Connect';
-  document.querySelectorAll('.mode, #bdayGo, #bdayStop, #bright, .lines input, #msgSave, #msgPlay, #update, .emojis button').forEach(e => e.disabled = !on);
+  document.querySelectorAll('.mode, #bdayGo, #bdayStop, #bright, .lines input, #msgSave, #msgPlay, #update, .emojis button, #words, #wordsSave').forEach(e => e.disabled = !on);
+  keepAwake(on);
 }
 
 function showMode(m) {
@@ -213,9 +236,10 @@ async function connect() {
     optionalServices: [SVC],
   });
   device.addEventListener('gattserverdisconnected', () => setConnected(false));
+  audio();                                     // the Connect tap is what allows the page to play sound
   const server = await device.gatt.connect();
   const svc = await server.getPrimaryService(SVC);
-  for (const [k, u] of Object.entries({ MODE, BRIGHT, BATTERY, COMMAND, MESSAGE })) ch[k] = await svc.getCharacteristic(u);
+  for (const [k, u] of Object.entries({ MODE, BRIGHT, BATTERY, COMMAND, MESSAGE, WORDS, TURN })) ch[k] = await svc.getCharacteristic(u);
 
   showMode((await ch.MODE.readValue()).getUint8(0));
   const b = (await ch.BRIGHT.readValue()).getUint8(0);
@@ -223,6 +247,9 @@ async function connect() {
   showBattery((await ch.BATTERY.readValue()).getUint16(0, true));
   const msg = new TextDecoder().decode(await ch.MESSAGE.readValue()).split('\n');
   for (let i = 0; i < 3; i++) $('l' + i).value = msg[i] || '';
+  $('words').value = new TextDecoder().decode(await ch.WORDS.readValue());
+  ch.TURN.addEventListener('characteristicvaluechanged', e => onTurn(e.target.value));
+  await ch.TURN.startNotifications();
 
   ch.MODE.addEventListener('characteristicvaluechanged', e => showMode(e.target.value.getUint8(0)));
   ch.BATTERY.addEventListener('characteristicvaluechanged', e => showBattery(e.target.value.getUint16(0, true)));
@@ -286,6 +313,114 @@ async function saveMessage() {
 }
 $('msgSave').onclick = () => saveMessage().catch(e => $('msgHint').textContent = 'Failed: ' + e.message);
 $('msgPlay').onclick = () => saveMessage().then(() => write('COMMAND', 1)).catch(e => $('msgHint').textContent = 'Failed: ' + e.message);
+
+// Roulette words: keep only what the pendant can show (see rlToText in roulette_logic.h).
+function cleanWords(text) {
+  const lines = [];
+  for (const raw of text.normalize('NFC').split('\n').slice(0, 12)) {
+    const out = [];
+    for (const { segment } of seg.segment(raw)) {
+      const c = segment.toUpperCase();
+      if (/^[A-Z0-9 !?.,\-ÁÉÍÓÚÑÜ¡¿]$/.test(c)) out.push(c);
+      if (out.length === 10) break;
+    }
+    lines.push(out.join(''));
+  }
+  let joined = lines.join('\n');
+  while (new TextEncoder().encode(joined).length > 150) joined = joined.slice(0, -1);
+  return joined;
+}
+$('words').oninput = () => {
+  const el = $('words'), v = cleanWords(el.value);
+  if (v !== el.value) { const at = el.selectionStart; el.value = v; el.selectionStart = el.selectionEnd = Math.min(at, v.length); }
+};
+$('wordsSave').onclick = async () => {
+  const v = cleanWords($('words').value).split('\n').map(w => w.trim()).filter(Boolean).join('\n');
+  try {
+    await gatt(() => ch.WORDS.writeValue(new TextEncoder().encode(v)));
+    $('words').value = v || new TextDecoder().decode(await gatt(() => ch.WORDS.readValue()));
+    $('wordsHint').textContent = 'Saved. All pendants get the new words within a few seconds.';
+  } catch (e) { $('wordsHint').textContent = 'Failed: ' + e.message; }
+};
+
+// Slot-machine sounds, made on the spot (no sound files). A turn from the pendant gives the
+// time until the drums start and when each one stops; the clicks follow the same easing as
+// the drums (rlReelPos in roulette_logic.h): one click per face rolling past.
+let ac = null;
+function audio() {
+  if (!ac) ac = new (window.AudioContext || window.webkitAudioContext)();
+  if (ac.state !== 'running') ac.resume();
+  return ac;
+}
+function reelPos(t, stop, dist) {
+  if (t >= stop) return dist;
+  const ease = x => 1 - (1 - x) ** 3, t9 = 0.9 * stop;
+  return t < t9 ? (dist + 0.25) * ease(t / t9) : dist + 0.25 - 0.25 * ease((t - t9) / (0.1 * stop));
+}
+let noiseBuf = null;
+function noise(at, len, freq, gain) {
+  const a = audio();
+  if (!noiseBuf) {
+    noiseBuf = a.createBuffer(1, a.sampleRate * 0.2, a.sampleRate);
+    const d = noiseBuf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  }
+  const src = a.createBufferSource(), f = a.createBiquadFilter(), g = a.createGain();
+  src.buffer = noiseBuf; f.type = 'bandpass'; f.frequency.value = freq; f.Q.value = 4;
+  g.gain.setValueAtTime(gain, at); g.gain.exponentialRampToValueAtTime(0.001, at + len);
+  src.connect(f).connect(g).connect(a.destination);
+  src.start(at); src.stop(at + len + 0.02);
+}
+function tone(at, freq, len, gain, type = 'triangle', endFreq = freq) {
+  const a = audio(), o = a.createOscillator(), g = a.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, at); o.frequency.exponentialRampToValueAtTime(endFreq, at + len);
+  g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(gain, at + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, at + len);
+  o.connect(g).connect(a.destination);
+  o.start(at); o.stop(at + len + 0.02);
+}
+function playTurn(untilMs, stops, jackpot) {
+  const a = audio(), t0 = a.currentTime + untilMs / 1000;
+  for (const stop of stops) {
+    const dist = 6 + Math.floor(stop / 150) + 2;
+    let last = 0;
+    for (let t = 0; t < stop; t += 4) {
+      const p = Math.floor(reelPos(t, stop, dist));
+      if (p > last) { last = p; noise(t0 + t / 1000, 0.018, 2600 + Math.random() * 600, 0.5 / stops.length); }
+    }
+    tone(t0 + stop / 1000, 140, 0.18, 0.5, 'sine', 55);              // clunk
+    noise(t0 + stop / 1000, 0.06, 400, 0.6);
+  }
+  const end = t0 + Math.max(...stops) / 1000 + 0.15;
+  if (jackpot) {
+    const notes = [523, 659, 784, 1047];
+    for (let r = 0; r < 3; r++)
+      notes.forEach((f, i) => tone(end + r * 0.55 + i * 0.1, f, 0.22, 0.35, 'square'));
+    tone(end + 1.65, 1047, 0.9, 0.35, 'square');
+  } else {
+    [523, 659, 784].forEach((f, i) => tone(end + i * 0.11, f, 0.18, 0.3));
+  }
+}
+function onTurn(v) {
+  const until = v.getUint16(0, true), n = v.getUint8(2), stops = [];
+  for (let i = 0; i < n; i++) stops.push(v.getUint16(3 + 2 * i, true));
+  playTurn(until, stops, v.getUint8(3 + 2 * n) === 1);
+}
+$('soundTest').onclick = () => playTurn(300, [2200, 3000, 3800], Math.random() < 0.5);
+
+// A locked phone stops the page (and the sounds): keep the screen on while connected.
+let wakeLock = null;
+async function keepAwake(on) {
+  try {
+    if (on && !wakeLock && 'wakeLock' in navigator) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => wakeLock = null);
+    } else if (!on && wakeLock) { await wakeLock.release(); wakeLock = null; }
+  } catch (e) { /* not allowed right now (page hidden): tried again when it is visible */ }
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && device?.gatt.connected) keepAwake(true);
+});
 
 // Update mode: first tap arms the button, a second tap within 4 s sends the command.
 let armTimer = null;
