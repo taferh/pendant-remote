@@ -359,10 +359,11 @@ function audio() {
 // Recorded sounds (sounds/*.mp3, from elevenlabs.io). Until they have loaded, or if they
 // cannot load, the made-up sounds below play instead.
 const sfx = {};
+const SOUNDS_VERSION = 2;                     // raise when a sound file changes, so phones fetch the new one
 async function loadSounds() {
   for (const name of ['spin', 'stop', 'win', 'jackpot', 'coins']) {
     try {
-      const r = await fetch('sounds/' + name + '.mp3');
+      const r = await fetch('sounds/' + name + '.mp3?v=' + SOUNDS_VERSION);
       sfx[name] = await ac.decodeAudioData(await r.arrayBuffer());
     } catch (e) { console.warn('sound', name, e); }
   }
