@@ -89,6 +89,8 @@
   .emojis button:active { transform: scale(.92); }
   .msgBtns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .msgBtns button { padding: 13px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--line); font-weight: 600; }
+  .wide { width: 100%; padding: 13px; border-radius: 12px; font-weight: 600; margin-bottom: 10px;
+    background: linear-gradient(135deg, #c2185b, var(--heart)); color: #fff; }
   .msgBtns .primary { background: linear-gradient(135deg, #c2185b, var(--heart)); border: 0; color: #fff; }
   .hint { color: var(--muted); font-size: 13px; margin: 10px 2px 0; min-height: 1.4em; }
   .update { width: 100%; padding: 13px; border-radius: 12px; background: transparent; border: 1px dashed var(--line); color: var(--muted); }
@@ -148,9 +150,10 @@
   <section>
     <h2>Roulette words</h2>
     <textarea class="words" id="words" rows="6" autocomplete="off" autocapitalize="characters" spellcheck="false" disabled></textarea>
+    <button id="wordsSave" class="primary wide" disabled>Save words</button>
     <div class="msgBtns">
-      <button id="wordsSave" class="primary" disabled>Save words</button>
-      <button id="soundTest">Test sound</button>
+      <button id="soundTest">Test turn</button>
+      <button id="jackpotTest">Test jackpot</button>
     </div>
     <p class="hint" id="wordsHint">One word per line, up to 12 words of 10 letters. While connected, this phone plays the slot-machine sounds.</p>
   </section>
@@ -446,7 +449,8 @@ function onTurn(v) {
   for (let i = 0; i < n; i++) stops.push(v.getUint16(3 + 2 * i, true));
   playTurn(until, stops, v.getUint8(3 + 2 * n) === 1);
 }
-$('soundTest').onclick = () => playTurn(300, [2200, 3000, 3800], Math.random() < 0.5);
+$('soundTest').onclick = () => playTurn(300, [2200, 3000, 3800], false);
+$('jackpotTest').onclick = () => playTurn(300, [2200, 3000, 3800], true);
 
 // A locked phone stops the page (and the sounds): keep the screen on while connected.
 let wakeLock = null;
